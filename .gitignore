@@ -1,0 +1,27 @@
+# Environment variables (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+.DS_Store?
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Node / NestJS (api/)
+api/node_modules/
+api/dist/
+api/coverage/
+api/npm-debug.log*
+api/yarn-error.log*
+api/.npm
+api/*.tsbuildinfo
+
+# Logs
+*.log
