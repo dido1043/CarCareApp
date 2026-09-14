@@ -1,114 +1,195 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# CarCare API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend foundation for the CarCare mobile app: a NestJS service that verifies
+Supabase-issued access tokens and exposes the authenticated identity to
+application modules.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+This repository currently contains **only the foundation** — configuration,
+database wiring, authentication and a health check. Vehicles, maintenance,
+expenses, reminders and the rest of the domain are not implemented yet.
 
-## Description
+## Architecture
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Normal request flow:
 
-## Project setup
-
-```bash
-$ npm install
+```
+Controller -> Service -> Prisma -> PostgreSQL
 ```
 
-## Compile and run the project
+Authentication flow:
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```
+Flutter client -> Supabase Auth -> access token (ES256 JWT)
+                                        |
+                                        v
+                   NestJS AuthGuard (verifies against cached JWKS)
+                                        |
+                                        v
+                        AuthUser -> protected controller
 ```
 
-## Run tests
+Supabase Auth owns sign-up, sign-in, OAuth, refresh tokens, password reset and
+email verification. This service never sees or stores credentials. It only
+verifies the signature, expiry, issuer and audience of the token the client
+sends, and trusts the `sub` claim as the user id.
 
-```bash
-# unit tests
-$ npm run test
+Supabase signs access tokens with rotating **ES256** keys and publishes the
+public half as a JWKS. The backend therefore needs **no secret at all** — it
+fetches the public key set once, caches it, and verifies tokens in-process. A
+refetch only happens when a token presents a key id that is not cached.
 
-# e2e tests
-$ npm run test:e2e
+All of this lives in `src/auth`, so the verification strategy can change
+without touching business modules.
 
-# test coverage
-$ npm run test:cov
+## Folder structure
+
+```
+src/
+├── main.ts                 bootstrap: prefix, CORS, pipes, filters, Swagger
+├── app.module.ts           root module
+├── config/                 env schema (zod) + typed configuration
+├── common/filters/         global exception filter
+├── database/               PrismaModule + PrismaService (global)
+├── auth/                   guard, token verification, CurrentUser decorator
+├── users/                  GET /users/me
+└── health/                 GET /health
+
+prisma/
+├── schema.prisma           User model keyed by the Supabase Auth user id
+├── migrations/
+└── seed.ts
+
+test/
+├── auth/                   unit + HTTP auth tests
+├── health/
+└── support/                test token helpers
 ```
 
-## Deployment
+## Environment variables
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Copy `.env.example` to `.env` and fill it in. `.env` is gitignored; never commit
+real secrets.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Variable       | Description                                           |
+| -------------- | ----------------------------------------------------- |
+| `NODE_ENV`     | `development`, `test` or `production`                  |
+| `PORT`         | HTTP port (defaults to `3030`)                         |
+| `DATABASE_URL` | PostgreSQL connection string                           |
+| `SUPABASE_URL` | Supabase project URL                                   |
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+The token issuer (`<SUPABASE_URL>/auth/v1`) and the JWKS endpoint
+(`<SUPABASE_URL>/auth/v1/.well-known/jwks.json`) are both derived from
+`SUPABASE_URL`. No API key or signing secret belongs in this service.
+
+Startup fails immediately with a readable error if any of these are missing or
+malformed.
+
+### Creating the Supabase project
+
+1. Create a project at <https://supabase.com/dashboard>.
+2. `SUPABASE_URL` — **Project Settings → Data API → Project URL**.
+
+That is all the backend needs. The **publishable/anon key** belongs in the
+Flutter client, not here, and the **secret API key** should never be committed
+or shipped in the app.
+
+If a project is ever moved back to legacy HS256 shared-secret signing, the
+`algorithms` option and key resolver in `src/auth/` are the only things that
+change.
+
+### DATABASE_URL
+
+Local development points at the bundled Postgres container:
+
+```
+DATABASE_URL=postgresql://carcare:carcare@localhost:5432/carcare?schema=public
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+To use the database inside your Supabase project instead, take the connection
+string from **Project Settings → Database → Connection string → URI**.
 
-## Observability
+## Running it
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+```bash
+npm install
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+# 1. start PostgreSQL
+npm run db:up
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+# 2. generate the Prisma client and apply migrations
+npm run prisma:generate
+npm run prisma:migrate
 
-## Resources
+# 3. run the API
+npm run start:dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+The API listens on `http://localhost:3030/api/v1` and Swagger UI is served at
+`http://localhost:3030/api/docs`.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Stop the database with `npm run db:down`.
 
-## Support
+### Other commands
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+| Command                   | Purpose                                     |
+| ------------------------- | ------------------------------------------- |
+| `npm run build`           | Compile to `dist/`                          |
+| `npm run lint`            | oxlint over `src/` and `test/`              |
+| `npm test`                | Unit tests                                  |
+| `npm run test:e2e`        | HTTP-level tests                            |
+| `npm run prisma:studio`   | Browse the database                         |
+| `npm run db:seed`         | Seed (set `SEED_USER_ID` to a Supabase uid) |
 
-## Stay in touch
+## Endpoints
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+| Method | Route              | Auth     |
+| ------ | ------------------ | -------- |
+| GET    | `/api/v1/health`   | public   |
+| GET    | `/api/v1/users/me` | required |
 
-## License
+### Health
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+curl http://localhost:3030/api/v1/health
+```
+
+```json
+{ "status": "ok", "database": "up", "timestamp": "2026-01-01T00:00:00.000Z" }
+```
+
+Returns `503` with `"database": "down"` when PostgreSQL is unreachable.
+
+### Authenticated request
+
+Obtain an access token from Supabase on the client (for example via
+`supabase.auth.signInWithPassword`), then send it as a bearer token:
+
+```bash
+curl http://localhost:3030/api/v1/users/me \
+  -H "Authorization: Bearer <supabase-access-token>"
+```
+
+```json
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "email": "driver@example.com",
+  "role": "authenticated"
+}
+```
+
+The response is derived entirely from the verified token. A user id supplied in
+the query string or body is ignored, so a caller cannot read another user's
+profile.
+
+Every authentication failure — missing header, wrong scheme, malformed token,
+bad signature, expired token — returns `401`:
+
+```bash
+curl -i http://localhost:3030/api/v1/users/me
+# HTTP/1.1 401 Unauthorized
+```
+
+## Database model
+
+`User` holds application-side data for a Supabase identity. Its primary key is
+the Supabase Auth user id (`sub`). No passwords or credentials are stored here.

@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: carcare-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: carcare
+      POSTGRES_PASSWORD: carcare
+      POSTGRES_DB: carcare
+    ports:
+      - '5432:5432'
+    volumes:
+      - carcare-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U carcare -d carcare']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  carcare-postgres-data:

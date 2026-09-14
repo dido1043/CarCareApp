@@ -1,0 +1,22 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Application-side profile for a Supabase Auth identity.
+/// `id` is the Supabase Auth user id (the JWT `sub` claim).
+/// Credentials are owned entirely by Supabase Auth and are never stored here.
+model User {
+  id        String   @id @db.Uuid
+  email     String?  @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
