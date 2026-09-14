@@ -2,7 +2,7 @@
 .env
 .env.*
 !.env.example
-
+api/.env.example
 # OS files
 .DS_Store
 .DS_Store?
@@ -23,5 +23,9 @@ api/yarn-error.log*
 api/.npm
 api/*.tsbuildinfo
 
+# Prisma generated client (regenerate with `npm run prisma:generate`)
+api/src/generated/
+
 # Logs
 *.log
+/.dart_tool/
