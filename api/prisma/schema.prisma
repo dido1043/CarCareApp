@@ -9,14 +9,161 @@ datasource db {
   provider = "postgresql"
 }
 
+enum FuelType {
+  PETROL
+  DIESEL
+  HYBRID
+  PLUG_IN_HYBRID
+  ELECTRIC
+  LPG
+  CNG
+  OTHER
+
+  @@map("fuel_type")
+}
+
+enum MaintenanceType {
+  OIL_CHANGE
+  FILTERS
+  BRAKES
+  TIRES
+  BATTERY
+  INSPECTION
+  TIMING_BELT
+  REPAIR
+  OTHER
+
+  @@map("maintenance_type")
+}
+
+enum ExpenseCategory {
+  FUEL
+  MAINTENANCE
+  REPAIR
+  INSURANCE
+  TAX
+  PARKING
+  WASHING
+  TIRES
+  OTHER
+
+  @@map("expense_category")
+}
+
 /// Application-side profile for a Supabase Auth identity.
 /// `id` is the Supabase Auth user id (the JWT `sub` claim).
 /// Credentials are owned entirely by Supabase Auth and are never stored here.
 model User {
-  id        String   @id @db.Uuid
-  email     String?  @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id        String    @id @db.Uuid
+  email     String?   @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  vehicles  Vehicle[]
 
   @@map("users")
+}
+
+/// A vehicle owned by exactly one user.
+///
+/// Mileage is tracked on two axes that must never be conflated:
+///
+/// * `odometerKm` — the last reading the driver confirmed by hand. This is the
+///   only value treated as ground truth, and `odometerConfirmedAt` records when
+///   it was taken. Together they form the mileage *baseline*.
+/// * `estimatedMileageKm` — the baseline plus every GPS trip recorded since it
+///   was set. It is the app's best guess at the real odometer, never a
+///   substitute for it, and is always >= `odometerKm`.
+///
+/// Confirming a new odometer reading re-anchors both values (see
+/// `VehiclesService.updateMileage`), which is what keeps GPS distance from
+/// being counted twice once the driver reports the real number.
+model Vehicle {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  make                String
+  model               String
+  year                Int
+  fuelType            FuelType  @map("fuel_type")
+  engine              String?
+  licensePlate        String?   @map("license_plate")
+  vin                 String?   @unique
+  odometerKm          Decimal   @default(0) @map("odometer_km") @db.Decimal(10, 1)
+  estimatedMileageKm  Decimal   @default(0) @map("estimated_mileage_km") @db.Decimal(12, 1)
+  odometerConfirmedAt DateTime? @map("odometer_confirmed_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trips              Trip[]
+  maintenanceRecords MaintenanceRecord[]
+  expenses           Expense[]
+
+  @@index([userId])
+  @@map("vehicles")
+}
+
+/// A completed journey, as measured by the mobile app.
+/// Individual GPS points stay on the device; the backend stores only the
+/// summary it needs to estimate mileage.
+model Trip {
+  id             String   @id @default(uuid()) @db.Uuid
+  vehicleId      String   @map("vehicle_id") @db.Uuid
+  startedAt      DateTime @map("started_at")
+  endedAt        DateTime @map("ended_at")
+  distanceMeters Int      @map("distance_meters")
+  startLatitude  Decimal  @map("start_latitude") @db.Decimal(9, 6)
+  startLongitude Decimal  @map("start_longitude") @db.Decimal(9, 6)
+  endLatitude    Decimal  @map("end_latitude") @db.Decimal(9, 6)
+  endLongitude   Decimal  @map("end_longitude") @db.Decimal(9, 6)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, startedAt(sort: Desc)])
+  @@map("trips")
+}
+
+/// A service performed on a vehicle, optionally with a next-due marker.
+model MaintenanceRecord {
+  id               String          @id @default(uuid()) @db.Uuid
+  vehicleId        String          @map("vehicle_id") @db.Uuid
+  type             MaintenanceType
+  title            String
+  description      String?
+  cost             Decimal?        @db.Decimal(10, 2)
+  mileageKm        Decimal?        @map("mileage_km") @db.Decimal(10, 1)
+  date             DateTime
+  nextDueDate      DateTime?       @map("next_due_date")
+  nextDueMileageKm Decimal?        @map("next_due_mileage_km") @db.Decimal(10, 1)
+  notes            String?
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, date(sort: Desc)])
+  @@index([vehicleId, nextDueDate])
+  @@index([vehicleId, nextDueMileageKm])
+  @@map("maintenance_records")
+}
+
+/// Money spent on a vehicle. Amounts are exact decimals; totals are summed by
+/// PostgreSQL rather than in application code.
+model Expense {
+  id          String          @id @default(uuid()) @db.Uuid
+  vehicleId   String          @map("vehicle_id") @db.Uuid
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("EUR") @db.VarChar(3)
+  date        DateTime
+  mileageKm   Decimal?        @map("mileage_km") @db.Decimal(10, 1)
+  description String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, date(sort: Desc)])
+  @@index([vehicleId, category])
+  @@map("expenses")
 }

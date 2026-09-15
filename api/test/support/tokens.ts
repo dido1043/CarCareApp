@@ -67,9 +67,12 @@ export async function signAccessToken(
   return builder.sign(signingKey);
 }
 
+export const TEST_ANON_KEY = 'test-anon-key';
+
 export const testSupabaseConfig = () => ({
   supabase: {
     url: TEST_SUPABASE_URL,
+    anonKey: TEST_ANON_KEY,
     jwtIssuer: TEST_ISSUER,
     jwtAudience: TEST_AUDIENCE,
     jwksUrl: `${TEST_SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
