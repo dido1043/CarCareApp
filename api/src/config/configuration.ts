@@ -9,6 +9,7 @@ export interface AppConfig {
   };
   supabase: {
     url: string;
+    anonKey: string;
     /** Issuer embedded in Supabase-issued access tokens. */
     jwtIssuer: string;
     /** Audience Supabase assigns to signed-in (non-anonymous) users. */
@@ -31,6 +32,7 @@ export function configuration(): AppConfig {
     },
     supabase: {
       url: supabaseUrl,
+      anonKey: env.SUPABASE_ANON_KEY,
       jwtIssuer: `${supabaseUrl}/auth/v1`,
       jwtAudience: 'authenticated',
       jwksUrl: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
