@@ -1,17 +1,12 @@
-import { type INestApplication, ValidationPipe } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { Test } from '@nestjs/testing';
-import { createLocalJWKSet } from 'jose';
+import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { JWT_KEY_RESOLVER } from '../../src/auth/jwt-key-resolver.js';
-import { UsersModule } from '../../src/users/users.module.js';
+import { createTestApp } from '../support/app.js';
+import { PrismaDouble } from '../support/prisma-double.js';
 import {
   foreignPrivateKey,
   OTHER_USER_ID,
   signAccessToken,
   TEST_USER_ID,
-  testJwks,
-  testSupabaseConfig,
 } from '../support/tokens.js';
 
 const ME_ROUTE = '/api/v1/users/me';
@@ -20,31 +15,9 @@ describe('GET /api/v1/users/me', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          ignoreEnvFile: true,
-          load: [testSupabaseConfig],
-        }),
-        UsersModule,
-      ],
-    })
-      // Verify against a local key set so tests never reach the network.
-      .overrideProvider(JWT_KEY_RESOLVER)
-      .useValue(createLocalJWKSet(testJwks))
-      .compile();
-
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+    // Verifies against a local key set and an in-memory database, so tests
+    // never reach the network.
+    app = await createTestApp(new PrismaDouble());
   });
 
   afterAll(async () => {
