@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { Prisma } from '../../generated/prisma/client.js';
 
 interface ErrorBody {
   statusCode: number;
@@ -45,7 +46,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `${request.method} ${request.url} -> ${status}`,
+        `${request.method} ${request.url} -> ${status}${describePrismaError(exception)}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
@@ -76,4 +77,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ? 'Internal server error'
       : 'Request failed';
   }
+}
+
+/**
+ * A Prisma error's `stack` says which call failed but not why — the reason
+ * lives in `code`/`meta`. Surface those so the log is actually diagnosable.
+ */
+function describePrismaError(exception: unknown): string {
+  if (!(exception instanceof Prisma.PrismaClientKnownRequestError)) {
+    return '';
+  }
+
+  return ` [prisma ${exception.code} ${JSON.stringify(exception.meta ?? {})}]`;
 }
