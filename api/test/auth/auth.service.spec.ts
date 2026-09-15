@@ -5,8 +5,10 @@ import { AuthService } from '../../src/auth/auth.service.js';
 import {
   foreignPrivateKey,
   signAccessToken,
+  TEST_ANON_KEY,
   TEST_AUDIENCE,
   TEST_ISSUER,
+  TEST_SUPABASE_URL,
   TEST_USER_ID,
   testJwks,
 } from '../support/tokens.js';
@@ -14,6 +16,8 @@ import {
 const configValues: Record<string, string> = {
   'supabase.jwtIssuer': TEST_ISSUER,
   'supabase.jwtAudience': TEST_AUDIENCE,
+  'supabase.url': TEST_SUPABASE_URL,
+  'supabase.anonKey': TEST_ANON_KEY,
 };
 
 const configService = {
