@@ -67,19 +67,27 @@ test/
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and fill it in. `.env` is gitignored; never commit
-real secrets.
+Copy `.env.example` to `.env` and fill it in. `.env` is the only place real
+values live: it is gitignored, excluded from the Docker build context, and read
+by the app, the Prisma CLI and `docker compose`. `.env.example` is committed and
+must only ever hold placeholders.
 
-| Variable       | Description                                           |
-| -------------- | ----------------------------------------------------- |
-| `NODE_ENV`     | `development`, `test` or `production`                  |
-| `PORT`         | HTTP port (defaults to `3030`)                         |
-| `DATABASE_URL` | PostgreSQL connection string                           |
-| `SUPABASE_URL` | Supabase project URL                                   |
+| Variable            | Used by            | Description                                        |
+| ------------------- | ------------------ | -------------------------------------------------- |
+| `NODE_ENV`          | app                | `development`, `test` or `production`              |
+| `PORT`              | app                | HTTP port (defaults to `3030`)                     |
+| `DATABASE_URL`      | app, seed          | PostgreSQL connection string for runtime queries   |
+| `DIRECT_URL`        | Prisma CLI         | Connection string for migrations                   |
+| `SUPABASE_URL`      | app                | Supabase project URL                               |
+| `SUPABASE_ANON_KEY` | app                | Anon/public key, used by the login endpoint        |
+| `POSTGRES_USER`     | `docker compose`   | Local database user                                |
+| `POSTGRES_PASSWORD` | `docker compose`   | Local database password                            |
+| `POSTGRES_DB`       | `docker compose`   | Local database name                                |
+| `POSTGRES_PORT`     | `docker compose`   | Host port for the local database (default `5432`)  |
 
 The token issuer (`<SUPABASE_URL>/auth/v1`) and the JWKS endpoint
 (`<SUPABASE_URL>/auth/v1/.well-known/jwks.json`) are both derived from
-`SUPABASE_URL`. No API key or signing secret belongs in this service.
+`SUPABASE_URL`. No signing secret belongs in this service.
 
 Startup fails immediately with a readable error if any of these are missing or
 malformed.
@@ -88,10 +96,10 @@ malformed.
 
 1. Create a project at <https://supabase.com/dashboard>.
 2. `SUPABASE_URL` — **Project Settings → Data API → Project URL**.
+3. `SUPABASE_ANON_KEY` — **Project Settings → Data API → anon public**.
 
-That is all the backend needs. The **publishable/anon key** belongs in the
-Flutter client, not here, and the **secret API key** should never be committed
-or shipped in the app.
+The **secret (service-role) key** should never be committed, shipped in the
+app, or used by this service.
 
 If a project is ever moved back to legacy HS256 shared-secret signing, the
 `algorithms` option and key resolver in `src/auth/` are the only things that
@@ -99,14 +107,28 @@ change.
 
 ### DATABASE_URL
 
-Local development points at the bundled Postgres container:
+For the bundled Postgres container, build the URL from the `POSTGRES_*` values
+in the same `.env`:
 
 ```
-DATABASE_URL=postgresql://carcare:carcare@localhost:5432/carcare?schema=public
+DATABASE_URL=postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:<POSTGRES_PORT>/<POSTGRES_DB>?schema=public
 ```
 
 To use the database inside your Supabase project instead, take the connection
-string from **Project Settings → Database → Connection string → URI**.
+strings from **Project Settings → Database → Connection string** — the
+transaction pooler for `DATABASE_URL`, the session pooler for `DIRECT_URL`.
+URL-encode any special characters in the password (`@` → `%40`, `!` → `%21`).
+
+### Docker
+
+The image contains no configuration; pass it at runtime:
+
+```bash
+docker build -t carcare-api .
+docker run --env-file .env -p 3030:3030 carcare-api
+```
+
+On Render, set the same variables in the service's environment settings.
 
 ## Running it
 

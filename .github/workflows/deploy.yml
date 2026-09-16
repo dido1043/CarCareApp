@@ -1,0 +1,129 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One production deploy at a time; a newer push waits instead of cancelling
+  # a deploy (and its migrations) halfway through.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy API to Render
+    needs: ci
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The runtime image installs production dependencies only, so the Prisma
+      # CLI is not available on Render. Migrations run here, before the new
+      # code goes live.
+      - name: Apply database migrations
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npx prisma migrate deploy
+
+      - name: Trigger Render deploy
+        id: trigger
+        run: |
+          set -euo pipefail
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::The RENDER_DEPLOY_HOOK_URL secret is not set."
+            exit 1
+          fi
+
+          # The hook URL already carries ?key=…; ref pins the deploy to the
+          # commit CI just tested rather than whatever is newest on main.
+          body="$RUNNER_TEMP/render-deploy.json"
+          status=$(curl --silent --show-error --request POST \
+            --output "$body" --write-out '%{http_code}' \
+            "${RENDER_DEPLOY_HOOK_URL}&ref=${GITHUB_SHA}")
+
+          case "$status" in
+            200)
+              deploy_id=$(jq -r '.deploy.id // .id // empty' "$body")
+              echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+              echo "Render deploy ${deploy_id:-<unknown id>} started for $GITHUB_SHA"
+              ;;
+            202)
+              echo "::warning::Render already had a deploy in progress. This commit was queued without a deploy ID, so its outcome is not tracked here."
+              ;;
+            *)
+              echo "::error::Render deploy hook returned HTTP $status"
+              cat "$body"
+              exit 1
+              ;;
+          esac
+
+      - name: Wait for deploy to go live
+        if: steps.trigger.outputs.deploy_id != ''
+        env:
+          DEPLOY_ID: ${{ steps.trigger.outputs.deploy_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "::notice::RENDER_API_KEY is not set, so the deploy result is not tracked. Check the Render dashboard for deploy $DEPLOY_ID."
+            exit 0
+          fi
+
+          # Hook URLs look like https://api.render.com/deploy/srv-XXXX?key=YYYY
+          service_id=$(printf '%s' "$RENDER_DEPLOY_HOOK_URL" | sed -nE 's#.*/deploy/(srv-[^?/]+).*#\1#p')
+          if [ -z "$service_id" ]; then
+            echo "::error::Could not read the service ID from RENDER_DEPLOY_HOOK_URL."
+            exit 1
+          fi
+
+          deadline=$(( $(date +%s) + 20 * 60 ))
+          while :; do
+            status=$(curl --fail --silent --show-error \
+              --header "Authorization: Bearer $RENDER_API_KEY" \
+              --header 'Accept: application/json' \
+              "https://api.render.com/v1/services/$service_id/deploys/$DEPLOY_ID" \
+              | jq -r '.status')
+            echo "Render deploy $DEPLOY_ID: $status"
+
+            case "$status" in
+              live)
+                exit 0
+                ;;
+              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
+                echo "::error::Render deploy $DEPLOY_ID ended with status $status."
+                exit 1
+                ;;
+            esac
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for Render deploy $DEPLOY_ID (last status: $status)."
+              exit 1
+            fi
+            sleep 15
+          done

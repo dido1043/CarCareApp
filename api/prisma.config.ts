@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import path from 'node:path';
-import { defineConfig, env } from 'prisma/config';
+import { defineConfig } from 'prisma/config';
 
 export default defineConfig({
   schema: path.join('prisma', 'schema.prisma'),
@@ -9,6 +9,10 @@ export default defineConfig({
     seed: 'node prisma/seed.ts',
   },
   datasource: {
-    url: env('DIRECT_URL'),
+    // Read directly rather than through env(), which throws when unset:
+    // `prisma generate` loads this file but never connects, so Docker builds
+    // and CI need no database URL. Commands that connect (migrate, db pull)
+    // still fail with "datasource.url property is required" when it is missing.
+    url: process.env.DIRECT_URL!,
   },
 });

@@ -2,7 +2,7 @@
 .env
 .env.*
 !.env.example
-api/.env.example
+
 # OS files
 .DS_Store
 .DS_Store?

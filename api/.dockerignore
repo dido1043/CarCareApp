@@ -1,0 +1,12 @@
+# Secrets never enter the build context; pass them at runtime instead.
+.env*
+
+# Rebuilt inside the image
+node_modules
+dist
+src/generated
+*.tsbuildinfo
+coverage
+
+.git
+*.log

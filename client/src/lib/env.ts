@@ -23,12 +23,12 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
-/** Physical devices cannot reach the host's `localhost`. */
-const DEFAULT_API_URL = 'http://localhost:3030/api/v1';
-
 export const env = {
-  apiBaseUrl:
-    process.env.EXPO_PUBLIC_API_URL ?? readExtra('apiBaseUrl') ?? DEFAULT_API_URL,
+  /** Differs per simulator, emulator and device — see client/.env.example. */
+  apiBaseUrl: required(
+    'EXPO_PUBLIC_API_URL',
+    process.env.EXPO_PUBLIC_API_URL ?? readExtra('apiBaseUrl'),
+  ),
   supabaseUrl: required(
     'EXPO_PUBLIC_SUPABASE_URL',
     process.env.EXPO_PUBLIC_SUPABASE_URL ?? readExtra('supabaseUrl'),
