@@ -1,0 +1,69 @@
+{
+  "expo": {
+    "name": "CarCare",
+    "slug": "carcare",
+    "version": "1.0.0",
+    "scheme": "carcare",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.carcare.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "CarCare uses your location to estimate the distance you drive, so your mileage stays up to date between odometer readings.",
+        "NSPhotoLibraryUsageDescription": "CarCare needs access to your photos so you can attach insurance policies, inspection reports and service invoices to your vehicle.",
+        "NSCameraUsageDescription": "CarCare uses the camera so you can photograph a document and store it with your vehicle."
+      }
+    },
+    "android": {
+      "package": "com.carcare.app",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0B0D",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-localization",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "CarCare uses your location to estimate the distance you drive, so your mileage stays up to date between odometer readings."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "CarCare needs access to your photos so you can attach insurance policies, inspection reports and service invoices to your vehicle.",
+          "cameraPermission": "CarCare uses the camera so you can photograph a document and store it with your vehicle."
+        }
+      ]
+    ]
+  }
+}
